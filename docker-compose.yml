@@ -1,0 +1,256 @@
+services:
+  # ---------------------------------------------------------
+  # Initialize persistent directory permissions
+  # ---------------------------------------------------------
+  init-data:
+    image: alpine:latest
+    container_name: submonitor-init-data
+    restart: "no"
+
+    volumes:
+      - ./data:/opt/SubMonitor/data
+      - ./secrets:/opt/SubMonitor/secrets
+      - ./rules:/opt/SubMonitor/rules
+      - ./html:/opt/SubMonitor/html
+      - ./nginx:/opt/SubMonitor/nginx
+
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+
+        DATA_DIR="/opt/SubMonitor/data"
+        SECRETS_DIR="/opt/SubMonitor/secrets"
+        RULES_DIR="/opt/SubMonitor/rules"
+        HTML_DIR="/opt/SubMonitor/html"
+        NGINX_DIR="/opt/SubMonitor/nginx"
+        CACHE_FILE="$$RULES_DIR/ip_cache.json"
+
+        echo "[Init] Preparing persistent directory permissions..."
+
+        # PHP-FPM、importer、geo-worker all run as UID/GID 82.
+        # These directories are intentionally writable by UID/GID 82.
+        for dir in "$$DATA_DIR" "$$SECRETS_DIR" "$$RULES_DIR" "$$HTML_DIR" "$$NGINX_DIR"; do
+          mkdir -p "$$dir"
+          chown -R 82:82 "$$dir"
+          find "$$dir" -type d -exec chmod 775 {} \;
+          find "$$dir" -type f -exec chmod 664 {} \;
+        done
+
+        # SQLite database and WAL/SHM files must remain writable by PHP.
+        find "$$DATA_DIR" -type f \
+          \( -name "*.db" -o -name "*.db-wal" -o -name "*.db-shm" \) \
+          -exec chown 82:82 {} \; \
+          -exec chmod 664 {} \;
+
+        # V2Board secrets are stored outside the shared data volume and mounted only by PHP-FPM.
+        mkdir -p "$$SECRETS_DIR"
+        chown 82:82 "$$SECRETS_DIR"
+        chmod 700 "$$SECRETS_DIR"
+        for file in "$$SECRETS_DIR/.v2board.key" "$$SECRETS_DIR/v2board_config.enc" "$$SECRETS_DIR/v2board_session.enc"; do
+          if [ -f "$$file" ]; then
+            chown 82:82 "$$file"
+            chmod 600 "$$file"
+          fi
+        done
+
+        # Geo cache is also written by the PHP worker.
+        mkdir -p "$$RULES_DIR"
+        touch "$$CACHE_FILE"
+        chown 82:82 "$$CACHE_FILE"
+        chmod 664 "$$CACHE_FILE"
+        chown 82:82 "$$RULES_DIR"
+        chmod 775 "$$RULES_DIR"
+
+        # The ACME working directory contains account/private material and is
+        # intentionally prepared as root-only. Nginx creates and owns it.
+        mkdir -p "$$RULES_DIR/acme"
+        chown root:root "$$RULES_DIR/acme"
+        chmod 700 "$$RULES_DIR/acme"
+
+        # Certificate directory is writable by the Nginx/root process and
+        # readable by the PHP container through its read-only mount.
+        mkdir -p /opt/SubMonitor/ssl
+        chmod 755 /opt/SubMonitor/ssl
+
+        echo "[Init] Permissions initialized: PHP runtime UID/GID 82:82"
+
+
+  # ---------------------------------------------------------
+  # Import existing IP geo cache into SQLite
+  # ---------------------------------------------------------
+  ip-cache-sync:
+    image: submonitor-php:latest
+    container_name: submonitor-ip-cache-sync
+    user: "82:82"
+    restart: "no"
+
+    depends_on:
+      init-data:
+        condition: service_completed_successfully
+
+    command:
+      - php
+      - /opt/SubMonitor/bin/import_ip_cache.php
+
+    volumes:
+      - ./bin:/opt/SubMonitor/bin:ro
+      - ./html:/opt/SubMonitor/html:ro
+      - ./rules:/opt/SubMonitor/rules
+      - ./data:/opt/SubMonitor/data
+
+    networks:
+      - submonitor-net
+
+
+  # ---------------------------------------------------------
+  # PHP-FPM
+  # ---------------------------------------------------------
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: submonitor-php:latest
+    container_name: submonitor-php
+    user: "82:82"
+    restart: always
+
+    depends_on:
+      ip-cache-sync:
+        condition: service_completed_successfully
+
+    volumes:
+      # PHP needs to update the admin password.
+      - ./html:/opt/SubMonitor/html
+
+      # PHP needs to update the Nginx upstream configuration.
+      - ./nginx:/etc/nginx/conf.d
+
+      # PHP workers update blacklist/domain state files.
+      - ./rules:/opt/SubMonitor/rules
+
+      # PHP only needs to read certificates; Nginx/ACME owns writes.
+      - ./ssl:/etc/nginx/ssl:ro
+
+      # SQLite database.
+      - ./data:/opt/SubMonitor/data
+
+      # V2Board credentials/session: PHP-FPM only, not mounted in background workers or Nginx.
+      - ./secrets:/opt/SubMonitor/secrets
+
+    networks:
+      - submonitor-net
+
+
+  # ---------------------------------------------------------
+  # Log importer
+  # ---------------------------------------------------------
+  log-importer:
+    image: submonitor-php:latest
+    container_name: submonitor-log-importer
+    user: "82:82"
+    restart: always
+
+    depends_on:
+      ip-cache-sync:
+        condition: service_completed_successfully
+
+    command:
+      - php
+      - /opt/SubMonitor/bin/log_importer.php
+
+    volumes:
+      - ./bin:/opt/SubMonitor/bin:ro
+      - ./html:/opt/SubMonitor/html:ro
+      - ./rules:/opt/SubMonitor/rules
+      - ./data:/opt/SubMonitor/data
+
+    networks:
+      - submonitor-net
+
+
+  # ---------------------------------------------------------
+  # Geo worker
+  # ---------------------------------------------------------
+  geo-worker:
+    image: submonitor-php:latest
+    container_name: submonitor-geo-worker
+    user: "82:82"
+    restart: always
+
+    depends_on:
+      ip-cache-sync:
+        condition: service_completed_successfully
+
+    command:
+      - php
+      - /opt/SubMonitor/bin/geo_worker.php
+
+    volumes:
+      - ./bin:/opt/SubMonitor/bin:ro
+      - ./html:/opt/SubMonitor/html:ro
+      - ./rules:/opt/SubMonitor/rules
+      - ./data:/opt/SubMonitor/data
+
+    networks:
+      - submonitor-net
+
+
+  # ---------------------------------------------------------
+  # Nginx
+  # ---------------------------------------------------------
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+
+    image: submonitor-nginx:latest
+    container_name: submonitor-nginx
+    restart: always
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      # ACME HTTP-01 needs to write challenge files into the webroot.
+      - ./html:/opt/SubMonitor/html
+
+      # PHP and Nginx share the same configuration files.
+      - ./nginx:/etc/nginx/conf.d
+
+      # Nginx writes access/error logs and runtime rule state here.
+      - ./rules:/opt/SubMonitor/rules
+
+      # Only Nginx/ACME writes certificates and private keys.
+      - ./ssl:/etc/nginx/ssl
+
+      - ./entrypoint.sh:/entrypoint.sh:ro
+      - log-data:/var/log/nginx
+
+    depends_on:
+      - php
+
+    networks:
+      - submonitor-net
+
+    entrypoint:
+      - /bin/sh
+      - /entrypoint.sh
+
+
+volumes:
+  log-data:
+
+
+networks:
+  submonitor-net:
+    driver: bridge
+    enable_ipv6: true
+
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+        - subnet: 2001:db8:1::/64
