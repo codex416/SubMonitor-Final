@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>系统登录</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-light: #3b82f6;
+            --primary-hover: #1d4ed8;
+            --bg-page: #f8fafc;
+            --bg-card: rgba(255, 255, 255, 0.85);
+            --bg-input: #f1f5f9;
+            --border: rgba(226, 232, 240, 0.8);
+            --border-focus: #2563eb;
+            --text-main: #0f172a;
+            --text-secondary: #64748b;
+            --text-placeholder: #94a3b8;
+            --error: #dc2626;
+            --shadow-card: 0 20px 40px -15px rgba(15, 23, 42, 0.05);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            min-height: 100vh;
+        }
+
+        body {
+            background-color: var(--bg-page);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(37,99,235,0.06) 0%, rgba(255,255,255,0) 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .login-card {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 360px;
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-card);
+            padding: 2.5rem 2rem;
+            animation: cardIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+
+        @keyframes cardIn {
+            from {
+                opacity: 0;
+                transform: translateY(16px) scale(0.98);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .login-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 1.75rem;
+            letter-spacing: -0.3px;
+            text-align: center;
+        }
+
+        .input-wrap {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+
+        .input-wrap input {
+            width: 100%;
+            padding: 14px 16px;
+            background: var(--bg-input);
+            border: 1.5px solid transparent;
+            border-radius: 12px;
+            color: var(--text-main);
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.25s ease;
+        }
+
+        .input-wrap input::placeholder {
+            color: var(--text-placeholder);
+        }
+
+        .input-wrap input:focus {
+            background: #ffffff;
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: #0f172a;
+            color: #ffffff;
+            border: none;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+        }
+
+        .submit-btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.25);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
+        }
+
+        .error-box {
+            margin-top: 1.25rem;
+            padding: 10px;
+            background: #fef2f2;
+            border: 1px solid #fee2e2;
+            border-radius: 8px;
+            color: var(--error);
+            font-size: 0.85rem;
+            text-align: center;
+            display: none;
+        }
+
+        .error-box.show {
+            display: block;
+            animation: shake 0.35s ease-out;
+        }
+
+        @keyframes shake {
+            0%,100%{transform:translateX(0)}
+            25%{transform:translateX(-4px)}
+            75%{transform:translateX(4px)}
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 12px;
+            }
+            .login-card {
+                padding: 2rem 1.4rem;
+                border-radius: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-title">系统登录</div>
+        <div class="input-wrap">
+            <input type="password" id="password" name="password" placeholder="请输入管理密码" autocomplete="current-password" autocapitalize="none" spellcheck="false">
+        </div>
+        <button class="submit-btn" id="loginBtn">登录</button>
+        <div class="error-box" id="errorTip"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginBtn = document.getElementById('loginBtn');
+            const passwordInput = document.getElementById('password');
+            const errorTip = document.getElementById('errorTip');
+
+            loginBtn.addEventListener('click', handleLogin);
+            passwordInput.addEventListener('keydown', e => e.key === 'Enter' && handleLogin());
+
+            async function handleLogin() {
+                const password = passwordInput.value.trim();
+                errorTip.classList.remove('show');
+
+                if (!password) {
+                    showError('请输入管理密码');
+                    passwordInput.focus();
+                    return;
+                }
+
+                loginBtn.disabled = true;
+                loginBtn.textContent = '验证中...';
+
+                try {
+                    const res = await fetch('/api/login.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'password=' + encodeURIComponent(password)
+                    });
+
+                    const data = await res.json().catch(() => ({}));
+
+                    if (res.ok && data.code === 200) {
+                        loginBtn.textContent = '登录成功，正在跳转...';
+                        setTimeout(() => {
+                            location.href = '/index.php';
+                        }, 360);
+                    } else {
+                        showError(data.msg || '密码错误，请重试');
+                        passwordInput.value = '';
+                        passwordInput.focus();
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = '登录';
+                    }
+                } catch (err) {
+                    showError(err.message || '连接服务器失败，请稍后重试');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = '登录';
+                }
+            }
+
+            function showError(text) {
+                errorTip.textContent = text;
+                errorTip.classList.add('show');
+            }
+        });
+    </script>
+</body>
+</html>
