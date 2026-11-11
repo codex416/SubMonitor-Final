@@ -3798,15 +3798,34 @@ function fetchTrendRows(): array {
 
             canvas.addEventListener('touchcancel', hideTip, {passive: true});
 
-            // 页面发生纵向滚动时取消固定提示，避免提示框像“粘”在屏幕上。
-            window.addEventListener('scroll', () => {
-                // 纵向页面滚动（包括手指松开后的惯性滚动）一律清除移动端固定提示。
-                // 横向数据选择会 preventDefault，不产生页面 scroll，因此不会误关闭横向滑动提示。
-                if (window.matchMedia('(pointer: coarse)').matches &&
-                    (canvas._activeTokenTrendTouching || canvas._activeTokenTrendTipPinned)) {
+            // 在其他卡片/区域开始纵向滑动时立即关闭折线图提示，避免 fixed 气泡悬停在屏幕上。
+            // 不能只依赖 scroll：部分移动端浏览器在滚动开始前不会立即派发 scroll 事件。
+            let outsideTouchStartX = 0;
+            let outsideTouchStartY = 0;
+            document.addEventListener('touchstart', e => {
+                if (!e.touches.length) return;
+                outsideTouchStartX = e.touches[0].clientX;
+                outsideTouchStartY = e.touches[0].clientY;
+            }, {passive: true, capture: true});
+
+            document.addEventListener('touchmove', e => {
+                if (!window.matchMedia('(pointer: coarse)').matches || !e.touches.length) return;
+                // 折线图自身的触摸由上面的横向选点逻辑处理；这里只处理其他区域。
+                if (e.target === canvas || canvas.contains(e.target)) return;
+                const touch = e.touches[0];
+                const dx = touch.clientX - outsideTouchStartX;
+                const dy = touch.clientY - outsideTouchStartY;
+                if (Math.abs(dy) > 5 && Math.abs(dy) > Math.abs(dx)) {
                     hideTip();
                 }
-            }, {passive: true});
+            }, {passive: true, capture: true});
+
+            // 捕获页面及所有嵌套滚动容器的滚动事件；不再依赖触摸状态，移动端只要发生滚动就关闭提示。
+            document.addEventListener('scroll', () => {
+                if (window.matchMedia('(pointer: coarse)').matches) {
+                    hideTip();
+                }
+            }, {passive: true, capture: true});
 
             document.addEventListener('click', e => {
                 if (e.target === canvas || canvas.contains(e.target)) return;
