@@ -1994,7 +1994,7 @@ function fetchTrendRows(): array {
 
         <div class="control-panel">
             <div class="control-row">
-                <input type="text" id="search" class="search-input" placeholder="搜索 IP、地区、Token、邮箱、用户ID、套餐、用户备注、UA 或请求路径" oninput="handleSearchInput()">
+                <input type="text" id="search" class="search-input" placeholder="搜索 IP、Token、用户、UA、请求信息" oninput="handleSearchInput()">
                 <div class="btn-group">
                     <button class="btn" onclick="refreshLogData()">刷新数据</button>
                     <button class="btn" onclick="clearAllFilters()">重置所有</button>
@@ -3641,6 +3641,19 @@ function fetchTrendRows(): array {
             tip.style.cssText = 'position:fixed;display:none;z-index:9999;padding:6px 9px;border-radius:7px;background:#0f172a;color:#fff;font-size:12px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.15);';
             document.body.appendChild(tip);
 
+            // 统一按实际布局视口计算提示位置，确保气泡完整留在可视区域内。
+            const positionTip = (clientX, clientY) => {
+                const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+                const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+                const tipRect = tip.getBoundingClientRect();
+                const tipWidth = tipRect.width || tip.offsetWidth;
+                const tipHeight = tipRect.height || tip.offsetHeight;
+                const left = Math.max(8, Math.min(clientX + 12, viewportWidth - tipWidth - 8));
+                const top = Math.max(8, Math.min(clientY - 38, viewportHeight - tipHeight - 8));
+                tip.style.left = left + 'px';
+                tip.style.top = top + 'px';
+            };
+
             canvas.addEventListener('mousemove', e => {
                 const points = canvas._activeTokenTrendPoints || [];
                 if (!points.length) return;
@@ -3659,8 +3672,7 @@ function fetchTrendRows(): array {
                 const idx = points.indexOf(nearest);
                 tip.textContent = `${canvas._activeTokenTrendLabels[idx]}：${nearest.value} 个活跃TOKEN`;
                 tip.style.display = 'block';
-                tip.style.left = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8) + 'px';
-                tip.style.top = Math.max(8, e.clientY - 38) + 'px';
+                positionTip(e.clientX, e.clientY);
             });
             canvas.addEventListener('mouseleave', () => {
                 // 鼠标离开图表时隐藏悬浮提示。
@@ -3724,8 +3736,7 @@ function fetchTrendRows(): array {
                 const idx = points.indexOf(nearest);
                 tip.textContent = `${canvas._activeTokenTrendLabels[idx]}：${nearest.value} 个活跃TOKEN`;
                 tip.style.display = 'block';
-                tip.style.left = Math.max(8, Math.min(clientX + 12, window.innerWidth - tip.offsetWidth - 8)) + 'px';
-                tip.style.top = Math.max(8, clientY - 38) + 'px';
+                positionTip(clientX, clientY);
                 canvas._activeTokenTrendSelectedIndex = idx;
                 canvas._activeTokenTrendTipPinned = pinned;
 
@@ -3789,8 +3800,12 @@ function fetchTrendRows(): array {
 
             // 页面发生纵向滚动时取消固定提示，避免提示框像“粘”在屏幕上。
             window.addEventListener('scroll', () => {
-                if (canvas._activeTokenTrendTouching) return;
-                if (canvas._activeTokenTrendTipPinned && window.matchMedia('(pointer: coarse)').matches) hideTip();
+                // 纵向页面滚动（包括手指松开后的惯性滚动）一律清除移动端固定提示。
+                // 横向数据选择会 preventDefault，不产生页面 scroll，因此不会误关闭横向滑动提示。
+                if (window.matchMedia('(pointer: coarse)').matches &&
+                    (canvas._activeTokenTrendTouching || canvas._activeTokenTrendTipPinned)) {
+                    hideTip();
+                }
             }, {passive: true});
 
             document.addEventListener('click', e => {
